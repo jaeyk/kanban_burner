@@ -31,7 +31,7 @@ Notes:
 2. Set weekly budgets by responsibility (`Research`, `Teaching`, `Service`, `Admin`, `Other`).
 3. Add projects with domain, impact, start date, and target end date.
 4. Manage projects in Kanban (`Backlog`, `Ready`, `Doing`, `Done`) with drag-and-drop moves/reordering.
-5. Use **Focus Pomodoro + Progress** for work sessions and progress bars.
+5. Use **Focus Timer + Progress** (`start`, `pause`, `stop`) for work sessions and progress bars.
 6. Use **Weekly Execution Log** as the record view for planned/start/end/actual.
 
 ## Planning Logic
@@ -50,8 +50,9 @@ The log shows one selected project with daily rows (Mon-Fri):
 - `Actual Spent`
 
 Timer behavior now lives in a separate section:
-- **Focus Pomodoro + Progress** starts/stops work sessions.
-- Completed work sessions update today's log row for the selected focus project.
+- **Focus Timer + Progress** supports `start`, `pause`, and `stop`.
+- Stopped sessions update today's log row for the selected focus project.
+- Each project also stores cumulative tracked hours across weeks.
 
 ## Dashboard
 

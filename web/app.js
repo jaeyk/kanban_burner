@@ -7,8 +7,6 @@ const STORAGE_KEY = "timebudget_state_v1";
 
 let state = {
   daily_hours: 8,
-  pomodoro_work_min: 25,
-  pomodoro_break_min: 5,
   budgets: {},
   tasks: [],
   last_week_key: null,
@@ -31,8 +29,6 @@ function normalizeStateShape() {
   if (!state.budgets) state.budgets = {};
   if (!state.tasks) state.tasks = [];
   if (!state.active_timer) state.active_timer = null;
-  state.pomodoro_work_min = Math.max(1, num(state.pomodoro_work_min, 25));
-  state.pomodoro_break_min = Math.max(1, num(state.pomodoro_break_min, 5));
   if (state.log_project_id == null) state.log_project_id = null;
   if (!state.last_week_key) state.last_week_key = currentWeekKey();
 }
@@ -191,6 +187,7 @@ function normalizeTask(t) {
     committed_hours: num(t.committed_hours, 0),
     baseline_deadline: t.baseline_deadline || (t.deadline || ""),
     debt_hours: num(t.debt_hours, 0),
+    tracked_total_hours: Math.max(0, num(t.tracked_total_hours, 0)),
     kanban_order: num(t.kanban_order, 0),
   };
 }
@@ -555,7 +552,8 @@ function renderKanbanDashboard() {
         const urgency = urgencyLabel(estimatedUrgency(t));
         const debt = makeUpDebtHours(t);
         const splitTxt = t.domain === "Research" ? ` | split=${fmt(t.research_split)}%` : "";
-        card.innerHTML = `<strong>${t.title}</strong><br/><span class="muted">${t.domain} | ${t.impact} impact | ${urgency} pressure${splitTxt}</span>${debt > 0 ? `<br/><span class="bad">Debt: ${fmt(debt)}h</span>` : ""}`;
+        const tracked = Math.max(0, num(t.tracked_total_hours, 0));
+        card.innerHTML = `<strong>${t.title}</strong><br/><span class="muted">${t.domain} | ${t.impact} impact | ${urgency} pressure${splitTxt}</span><br/><span class="muted">Tracked total: ${fmt(tracked)}h</span>${debt > 0 ? `<br/><span class="bad">Debt: ${fmt(debt)}h</span>` : ""}`;
         card.draggable = true;
         card.addEventListener("dragstart", (e) => {
           draggingTaskId = t.id;
@@ -809,19 +807,42 @@ function autoAdvanceWeekIfNeeded() {
 }
 
 function startTimer(taskId, dayIndex) {
-  if (state.active_timer) return;
   const t = state.tasks.find((x) => x.id === taskId);
   if (!t) return;
-  const now = new Date();
-  t.daily_start[dayIndex] = toClockLocal(now);
-  state.active_timer = {
-    task_id: taskId,
-    day_index: dayIndex,
-    started_at: now.toISOString(),
-    mode: "work",
-    duration_min: Math.max(1, num(state.pomodoro_work_min, 25)),
-  };
+  if (state.active_timer) {
+    const sameTimer = state.active_timer.task_id === taskId
+      && num(state.active_timer.day_index, -999) === num(dayIndex, -999);
+    if (!sameTimer) return;
+    if (state.active_timer.started_at) return;
+    state.active_timer.started_at = new Date().toISOString();
+  } else {
+    const now = new Date();
+    if (dayIndex >= 0 && dayIndex < 5) t.daily_start[dayIndex] = toClockLocal(now);
+    state.active_timer = {
+      task_id: taskId,
+      day_index: dayIndex,
+      started_at: now.toISOString(),
+      elapsed_ms: 0,
+    };
+  }
   render();
+  scheduleSave();
+}
+
+function currentElapsedMs(timer, now = Date.now()) {
+  if (!timer) return 0;
+  const baseMs = Math.max(0, num(timer.elapsed_ms, 0));
+  if (!timer.started_at) return baseMs;
+  const started = parseIsoDate(timer.started_at);
+  if (!started) return baseMs;
+  return Math.max(0, baseMs + (now - started.getTime()));
+}
+
+function pauseActiveTimer(renderAfter = true) {
+  if (!state.active_timer || !state.active_timer.started_at) return;
+  state.active_timer.elapsed_ms = currentElapsedMs(state.active_timer);
+  state.active_timer.started_at = null;
+  if (renderAfter) render();
   scheduleSave();
 }
 
@@ -829,12 +850,14 @@ function stopActiveTimer(renderAfter = true) {
   if (!state.active_timer) return;
   const t = state.tasks.find((x) => x.id === state.active_timer.task_id);
   const idx = num(state.active_timer.day_index, -1);
-  const started = parseIsoDate(state.active_timer.started_at);
-  if (t && idx >= 0 && idx < 5 && started) {
-    const now = new Date();
-    const elapsedHours = Math.max(0, (now.getTime() - started.getTime()) / (1000 * 60 * 60));
-    t.daily_actual[idx] = Math.max(0, num(t.daily_actual[idx], 0) + elapsedHours);
-    t.daily_end[idx] = toClockLocal(now);
+  const now = new Date();
+  const elapsedHours = currentElapsedMs(state.active_timer, now.getTime()) / (1000 * 60 * 60);
+  if (t && elapsedHours > 0) {
+    if (idx >= 0 && idx < 5) {
+      t.daily_actual[idx] = Math.max(0, num(t.daily_actual[idx], 0) + elapsedHours);
+      t.daily_end[idx] = toClockLocal(now);
+    }
+    t.tracked_total_hours = Math.max(0, num(t.tracked_total_hours, 0) + elapsedHours);
   }
   state.active_timer = null;
   if (renderAfter) render();
@@ -853,79 +876,55 @@ function renderProjectProgress() {
   }
   const plannedTotal = weeklyPlannedTotal(t);
   const actualTotal = weeklyActualTotal(t);
+  const trackedTotal = Math.max(0, num(t.tracked_total_hours, 0));
   const pct = plannedTotal <= 0 ? 0 : Math.min(100, (actualTotal / plannedTotal) * 100);
-  progressText.textContent = `${t.title}: ${fmt(actualTotal)}h / ${fmt(plannedTotal)}h (${fmt(pct)}%)`;
+  progressText.textContent = `${t.title}: ${fmt(actualTotal)}h / ${fmt(plannedTotal)}h this week (${fmt(pct)}%) | ${fmt(trackedTotal)}h total tracked`;
   progressFill.style.width = `${pct}%`;
 }
 
-function startPomodoro() {
-  if (state.active_timer) return;
+function startFocusTimer() {
   const t = state.tasks.find((x) => x.id === state.log_project_id);
   if (!t) return;
   const today = todayIso();
   const weekDays = currentWeekDatesMonFri();
   const idx = weekDays.findIndex((d) => d === today);
-  if (idx < 0) return;
   startTimer(t.id, idx);
 }
 
-function stopPomodoro() {
+function pauseFocusTimer() {
+  pauseActiveTimer(true);
+}
+
+function stopFocusTimer() {
   stopActiveTimer(true);
 }
 
-function renderPomodoro() {
-  const workInput = document.getElementById("pomodoroWorkMin");
-  const breakInput = document.getElementById("pomodoroBreakMin");
-  const startBtn = document.getElementById("pomodoroStartBtn");
-  const stopBtn = document.getElementById("pomodoroStopBtn");
-  const status = document.getElementById("pomodoroStatusText");
-  const fill = document.getElementById("pomodoroProgressFill");
-  if (!workInput || !breakInput || !startBtn || !stopBtn || !status || !fill) return;
-
-  workInput.value = String(Math.max(1, num(state.pomodoro_work_min, 25)));
-  breakInput.value = String(Math.max(1, num(state.pomodoro_break_min, 5)));
-  workInput.onchange = () => {
-    state.pomodoro_work_min = Math.max(1, num(workInput.value, 25));
-    scheduleSave();
-    renderPomodoro();
-  };
-  breakInput.onchange = () => {
-    state.pomodoro_break_min = Math.max(1, num(breakInput.value, 5));
-    scheduleSave();
-    renderPomodoro();
-  };
-
+function renderFocusTimer() {
+  const startBtn = document.getElementById("timerStartBtn");
+  const pauseBtn = document.getElementById("timerPauseBtn");
+  const stopBtn = document.getElementById("timerStopBtn");
+  const status = document.getElementById("timerStatusText");
+  if (!startBtn || !pauseBtn || !stopBtn || !status) return;
   const hasFocus = Boolean(state.tasks.find((x) => x.id === state.log_project_id));
-  startBtn.disabled = !hasFocus || Boolean(state.active_timer);
-  stopBtn.disabled = !state.active_timer;
+  const active = state.active_timer;
+  const isRunning = Boolean(active && active.started_at);
+  const isPaused = Boolean(active && !active.started_at);
+  const sameFocus = Boolean(active && active.task_id === state.log_project_id);
 
-  if (!state.active_timer) {
-    fill.style.width = "0%";
-    status.textContent = hasFocus
-      ? `Ready: ${fmt(state.pomodoro_work_min)}m work + ${fmt(state.pomodoro_break_min)}m break`
-      : "Select a focus project first.";
+  startBtn.disabled = !hasFocus || (isRunning && !sameFocus) || (isPaused && !sameFocus);
+  pauseBtn.disabled = !isRunning;
+  stopBtn.disabled = !active;
+
+  if (!active) {
+    status.textContent = hasFocus ? "Ready to track time." : "Select a focus project first.";
     return;
   }
 
-  const started = parseIsoDate(state.active_timer.started_at);
-  if (!started) {
-    fill.style.width = "0%";
-    status.textContent = "Timer state invalid.";
-    return;
-  }
-  const durationMs = Math.max(1, num(state.active_timer.duration_min, state.pomodoro_work_min)) * 60 * 1000;
-  const elapsedMs = Date.now() - started.getTime();
-  const pct = Math.max(0, Math.min(100, (elapsedMs / durationMs) * 100));
-  fill.style.width = `${pct}%`;
-  const remainingMs = Math.max(0, durationMs - elapsedMs);
-  status.textContent = `Work session running: ${formatElapsed(remainingMs)} left`;
-
-  if (elapsedMs >= durationMs) {
-    stopActiveTimer(false);
-    status.textContent = `Work session complete. Take ${fmt(state.pomodoro_break_min)}m break.`;
-    fill.style.width = "100%";
-    scheduleSave();
-  }
+  const timerTask = state.tasks.find((x) => x.id === active.task_id);
+  const elapsed = currentElapsedMs(active);
+  const stateLabel = isRunning ? "Running" : "Paused";
+  const name = timerTask ? timerTask.title : "Unknown project";
+  status.textContent = `${stateLabel}: ${name} | ${formatElapsed(elapsed)} elapsed`;
 }
 
 function render() {
@@ -939,14 +938,14 @@ function render() {
   renderBudgets();
   renderKanbanDashboard();
   renderExecutionLog();
-  renderPomodoro();
+  renderFocusTimer();
   renderProjectProgress();
 
   if (timerTickHandle) {
     clearTimeout(timerTickHandle);
     timerTickHandle = null;
   }
-  if (state.active_timer) timerTickHandle = setTimeout(render, 1000);
+  if (state.active_timer && state.active_timer.started_at) timerTickHandle = setTimeout(render, 1000);
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
@@ -957,8 +956,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     await importStateJson(file);
     e.target.value = "";
   });
-  document.getElementById("pomodoroStartBtn").addEventListener("click", startPomodoro);
-  document.getElementById("pomodoroStopBtn").addEventListener("click", stopPomodoro);
+  document.getElementById("timerStartBtn").addEventListener("click", startFocusTimer);
+  document.getElementById("timerPauseBtn").addEventListener("click", pauseFocusTimer);
+  document.getElementById("timerStopBtn").addEventListener("click", stopFocusTimer);
   document.getElementById("saveEditBtn").addEventListener("click", saveEditor);
   document.getElementById("cancelEditBtn").addEventListener("click", closeEditor);
   await loadState();

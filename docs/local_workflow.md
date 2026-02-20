@@ -45,4 +45,4 @@ Memory:
 - When using the local Python server, state is also mirrored to `data/state.json`.
 - For cross-device use, export JSON from `0) Local Data + Backup` and import it on the other browser/device.
 - `Export JSON` is always the latest state at the moment you click it.
-- Pomodoro runs in `5) Focus Pomodoro + Progress`; the weekly log is record-only.
+- Focus tracking runs in `5) Focus Timer + Progress` with `start`, `pause`, and `stop`; stopping writes time to the weekly log and project total.
