@@ -19,6 +19,7 @@ This repo includes a GitHub Actions workflow at `.github/workflows/deploy-pages.
 3. Set `Source` to `GitHub Actions`.
 4. After the workflow runs, your site will be available at:
    - `https://<your-username>.github.io/<repo-name>/`
+   - this repo: `https://jaeyk.github.io/time_budget/`
 
 Notes:
 - The app is static and local-first (`localStorage`), so data is saved per browser/device.
@@ -29,8 +30,9 @@ Notes:
 1. Set daily work capacity (Mon-Fri).
 2. Set weekly budgets by responsibility (`Research`, `Teaching`, `Service`, `Admin`, `Other`).
 3. Add projects with domain, impact, start date, and target end date.
-4. Manage projects in Kanban (`Backlog`, `Ready`, `Doing`, `Done`).
-5. In the weekly log, focus on one project and record actual work via Start/Stop timer.
+4. Manage projects in Kanban (`Backlog`, `Ready`, `Doing`, `Done`) with drag-and-drop moves/reordering.
+5. Use **Focus Pomodoro + Progress** for work sessions and progress bars.
+6. Use **Weekly Execution Log** as the record view for planned/start/end/actual.
 
 ## Planning Logic
 
@@ -46,12 +48,10 @@ The log shows one selected project with daily rows (Mon-Fri):
 - `Start`
 - `End`
 - `Actual Spent`
-- `Action` (timer)
 
-Timer behavior:
-- `Start` records start time.
-- `Stop` records end time and adds elapsed time to `Actual Spent`.
-- One timer can run at a time.
+Timer behavior now lives in a separate section:
+- **Focus Pomodoro + Progress** starts/stops work sessions.
+- Completed work sessions update today's log row for the selected focus project.
 
 ## Dashboard
 
@@ -64,7 +64,7 @@ Kanban cards support:
 
 - Primary store: browser `localStorage` (auto-save on edits and timer events).
 - Export/Import: use **0) Local Data + Backup** in the app.
-  - `Export JSON` creates a portable backup file.
+  - `Export JSON` always exports the latest in-memory state.
   - `Import JSON` restores state from a previous export.
 
 Notes:

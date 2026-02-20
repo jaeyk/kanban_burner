@@ -42,3 +42,5 @@ Open `http://127.0.0.1:8765`.
 Memory:
 - The app auto-saves to browser `localStorage`.
 - For cross-device use, export JSON from `0) Local Data + Backup` and import it on the other browser/device.
+- `Export JSON` is always the latest state at the moment you click it.
+- Pomodoro runs in `5) Focus Pomodoro + Progress`; the weekly log is record-only.
